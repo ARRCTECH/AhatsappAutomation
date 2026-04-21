@@ -4,8 +4,77 @@ const { Client, LocalAuth } = require('whatsapp-web.js');
 const QRCode = require('qrcode');
 const path = require('path');
 const Groq = require('groq-sdk');
+const fs = require('fs');
 
 require('dotenv').config();
+
+// ============= PUPPETEER CHROME PATH FIX FOR RENDER =============
+// Chrome installation path शोधा
+let chromePath = null;
+let chromeInstalled = false;
+
+// Windows साठी Chrome path
+if (process.platform === 'win32') {
+    const possiblePaths = [
+        'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+        'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+        process.env.CHROME_PATH || null
+    ];
+    
+    for (const testPath of possiblePaths) {
+        if (testPath && fs.existsSync(testPath)) {
+            chromePath = testPath;
+            chromeInstalled = true;
+            console.log(`✅ Chrome found at: ${chromePath}`);
+            break;
+        }
+    }
+}
+try {
+    // Render वर Chrome चे possible paths
+    const possiblePaths = [
+        '/usr/bin/google-chrome-stable',
+        '/usr/bin/google-chrome',
+        '/usr/bin/chromium-browser',
+        '/usr/bin/chromium',
+        process.env.CHROME_PATH || null,
+        '/opt/render/.cache/puppeteer/chrome/linux-147.0.7727.57/chrome-linux64/chrome'
+    ];
+    
+    for (const testPath of possiblePaths) {
+        if (testPath && fs.existsSync(testPath)) {
+            chromePath = testPath;
+            chromeInstalled = true;
+            console.log(`✅ Chrome found at: ${chromePath}`);
+            break;
+        }
+    }
+    
+    if (!chromeInstalled) {
+        console.log('⚠️ Chrome not found in system paths');
+        console.log('📦 Checking Puppeteer cache directory...');
+        
+        // Puppeteer cache मध्ये Chrome आहे का ते check करा
+        const puppeteerCachePath = '/opt/render/.cache/puppeteer/chrome';
+        if (fs.existsSync(puppeteerCachePath)) {
+            const chromeDirs = fs.readdirSync(puppeteerCachePath);
+            if (chromeDirs.length > 0) {
+                const possibleChromePath = path.join(puppeteerCachePath, chromeDirs[0], 'chrome-linux64', 'chrome');
+                if (fs.existsSync(possibleChromePath)) {
+                    chromePath = possibleChromePath;
+                    chromeInstalled = true;
+                    console.log(`✅ Chrome found in Puppeteer cache: ${chromePath}`);
+                }
+            }
+        }
+    }
+    
+    if (!chromeInstalled) {
+        console.log('❌ Chrome not found! Will use Puppeteer default (might fail on Render)');
+    }
+} catch (err) {
+    console.log('⚠️ Error finding Chrome:', err.message);
+}
 
 const app = express();
 app.use(cors());
@@ -18,37 +87,13 @@ const clientStatus = {};
 const conversations = [];
 
 console.log('🚀 WhatsApp AI Auto-Reply Bot Server Starting...');
+console.log('📋 Environment:', process.env.NODE_ENV || 'development');
+console.log('🔧 Chrome path config:', chromePath || 'Using default');
 
 // ============= GROQ AI HELPER =============
 const groq = new Groq({
     apiKey: process.env.GROQ_API_KEY
 });
-
-
-const client = new Client({
-  authStrategy: new LocalAuth(), // keeps session saved
-
-  puppeteer: {
-    headless: true,
-    args: [
-      "--no-sandbox",
-      "--disable-setuid-sandbox",
-      "--disable-dev-shm-usage",
-      "--disable-gpu"
-    ],
-  },
-});
-
-client.on("qr", (qr) => {
-  console.log("Scan QR:", qr);
-});
-
-client.on("ready", () => {
-  console.log("✅ Client is ready!");
-});
-
-client.initialize();
-
 
 async function getAIReply(userMessage, sender) {
     console.log(`🤖 Generating AI reply for: ${sender}`);
@@ -97,7 +142,7 @@ async function getAIReply(userMessage, sender) {
     }
 }
 
-// ============= WHATSAPP CLIENT =============
+// ============= WHATSAPP CLIENT INITIALIZATION =============
 
 async function initializeClient(accountId) {
     if (clients[accountId]) {
@@ -108,21 +153,36 @@ async function initializeClient(accountId) {
     console.log(`🔄 Initializing WhatsApp client for: ${accountId}`);
     clientStatus[accountId] = 'initializing';
 
+    // Puppeteer launch options
+    const puppeteerOptions = {
+        headless: true,
+        args: [
+            '--no-sandbox',
+            '--disable-setuid-sandbox',
+            '--disable-dev-shm-usage',
+            '--disable-accelerated-2d-canvas',
+            '--disable-gpu',
+            '--disable-web-security',
+            '--disable-features=IsolateOrigins,site-per-process',
+            '--ignore-certificate-errors',
+            '--window-size=1920,1080'
+        ]
+    };
+    
+    // Render वर Chrome path set करा (जर सापडला असेल तर)
+    if (chromePath && chromeInstalled) {
+        puppeteerOptions.executablePath = chromePath;
+        console.log(`🔧 Using Chrome executable: ${chromePath}`);
+    } else {
+        console.log('⚠️ No custom Chrome path, letting Puppeteer find its own');
+    }
+
     const client = new Client({
         authStrategy: new LocalAuth({ 
             clientId: accountId,
             dataPath: path.join(__dirname, 'sessions')
         }),
-        puppeteer: {
-            headless: false,
-            args: [
-                '--no-sandbox',
-                '--disable-setuid-sandbox',
-                '--disable-dev-shm-usage',
-                '--disable-accelerated-2d-canvas',
-                '--disable-gpu'
-            ]
-        }
+        puppeteer: puppeteerOptions
     });
 
     client.on('qr', async (qr) => {
@@ -134,6 +194,7 @@ async function initializeClient(accountId) {
             console.log(`✅ QR Code generated for ${accountId}`);
         } catch (err) {
             console.error('QR generation error:', err);
+            clientStatus[accountId] = 'qr_error';
         }
     });
 
@@ -141,10 +202,11 @@ async function initializeClient(accountId) {
         console.log(`✅ WhatsApp client ${accountId} is READY!`);
         clientStatus[accountId] = 'ready';
         qrCodes[accountId] = null;
+        console.log(`🎉 Bot is now active and will auto-reply to messages for ${accountId}`);
     });
 
     client.on('authenticated', () => {
-        console.log(`🔐 Client ${accountId} authenticated`);
+        console.log(`🔐 Client ${accountId} authenticated successfully`);
     });
 
     client.on('auth_failure', (msg) => {
@@ -157,39 +219,55 @@ async function initializeClient(accountId) {
         delete clients[accountId];
         delete qrCodes[accountId];
         clientStatus[accountId] = 'disconnected';
+        
+        // Auto-reconnect after 5 seconds
+        setTimeout(() => {
+            console.log(`🔄 Attempting to reconnect ${accountId}...`);
+            initializeClient(accountId);
+        }, 5000);
     });
 
     client.on('message', async (message) => {
         console.log(`📨 New message from ${message.from}: ${message.body?.substring(0, 50)}`);
         
-        // Auto-reply logic
+        // Auto-reply logic (avoid status broadcasts and group messages)
         if (message.from !== 'status@broadcast' && !message.from.includes('g.us')) {
             const sender = message.from.replace('@c.us', '');
             const userMessage = message.body;
             
-            if (userMessage) {
+            if (userMessage && userMessage.trim()) {
                 console.log(`🤖 Generating AI reply for ${sender}...`);
-                const aiReply = await getAIReply(userMessage, sender);
-                console.log(`🤖 AI Reply: ${aiReply}`);
                 
-                // Send reply after 1-2 seconds (natural delay)
-                setTimeout(async () => {
-                    try {
-                        await message.reply(aiReply);
-                        console.log(`✅ Auto-reply sent to ${sender}`);
-                        
-                        // Store conversation
-                        conversations.push({
-                            id: conversations.length + 1,
-                            sender: sender,
-                            userMessage: userMessage,
-                            aiReply: aiReply,
-                            timestamp: new Date().toISOString()
-                        });
-                    } catch (err) {
-                        console.error(`❌ Failed to send reply: ${err.message}`);
-                    }
-                }, 1500);
+                try {
+                    const aiReply = await getAIReply(userMessage, sender);
+                    console.log(`🤖 AI Reply: ${aiReply}`);
+                    
+                    // Send reply after 1-2 seconds (natural delay)
+                    setTimeout(async () => {
+                        try {
+                            await message.reply(aiReply);
+                            console.log(`✅ Auto-reply sent to ${sender}`);
+                            
+                            // Store conversation
+                            conversations.unshift({
+                                id: Date.now(),
+                                sender: sender,
+                                userMessage: userMessage,
+                                aiReply: aiReply,
+                                timestamp: new Date().toISOString()
+                            });
+                            
+                            // Keep only last 100 conversations
+                            if (conversations.length > 100) {
+                                conversations.pop();
+                            }
+                        } catch (err) {
+                            console.error(`❌ Failed to send reply: ${err.message}`);
+                        }
+                    }, 1500);
+                } catch (error) {
+                    console.error('AI reply generation failed:', error);
+                }
             }
         }
     });
@@ -200,14 +278,44 @@ async function initializeClient(accountId) {
         console.log(`✅ Client ${accountId} initialized successfully`);
         return client;
     } catch (error) {
-        console.error(`❌ Failed to initialize client ${accountId}:`, error);
-        clientStatus[accountId] = 'error';
+        console.error(`❌ Failed to initialize client ${accountId}:`, error.message);
+        clientStatus[accountId] = `error: ${error.message}`;
+        
+        // Retry initialization after 10 seconds on error
+        setTimeout(() => {
+            console.log(`🔄 Retrying initialization for ${accountId}...`);
+            initializeClient(accountId);
+        }, 10000);
+        
         return null;
     }
 }
 
-// Initialize default account on startup
-initializeClient('account1').catch(console.error);
+// Initialize default account on startup with retry logic
+async function startBot() {
+    console.log('🤖 Starting WhatsApp Bot...');
+    
+    let retryCount = 0;
+    const maxRetries = 3;
+    
+    while (retryCount < maxRetries) {
+        try {
+            await initializeClient('account1');
+            break;
+        } catch (error) {
+            retryCount++;
+            console.error(`Initialization attempt ${retryCount} failed:`, error.message);
+            
+            if (retryCount < maxRetries) {
+                console.log(`Waiting 10 seconds before retry ${retryCount + 1}...`);
+                await new Promise(resolve => setTimeout(resolve, 10000));
+            }
+        }
+    }
+}
+
+// Start the bot
+startBot();
 
 // ============= API ENDPOINTS =============
 
@@ -217,6 +325,9 @@ app.get('/api/health', (req, res) => {
         status: 'ok', 
         timestamp: new Date().toISOString(),
         activeClients: Object.keys(clients),
+        clientStatus: clientStatus,
+        chromeConfigured: chromeInstalled,
+        chromePath: chromePath || 'Not found',
         conversationsCount: conversations.length
     });
 });
@@ -227,12 +338,14 @@ app.get('/api/status/:accountId', (req, res) => {
     
     const isReady = clientStatus[accountId] === 'ready';
     const qr = qrCodes[accountId] || null;
+    const status = clientStatus[accountId] || 'unknown';
     
     res.json({ 
         accountId, 
         isReady, 
         qr,
-        status: clientStatus[accountId] || 'unknown'
+        status,
+        chromeAvailable: chromeInstalled
     });
 });
 
@@ -253,7 +366,7 @@ app.post('/api/send', async (req, res) => {
         if (!client || clientStatus[accountId] !== 'ready') {
             return res.status(400).json({ 
                 success: false, 
-                error: 'WhatsApp not connected' 
+                error: 'WhatsApp not connected. Please scan QR code first.' 
             });
         }
         
@@ -275,62 +388,163 @@ app.post('/api/send', async (req, res) => {
 
 // Get all conversations
 app.get('/api/conversations', (req, res) => {
-    res.json({ conversations: conversations.reverse() });
+    const limit = parseInt(req.query.limit) || 50;
+    res.json({ 
+        conversations: conversations.slice(0, limit),
+        total: conversations.length 
+    });
 });
 
-// ============= QR VIEWER PAGE (No Extension Needed!) =============
+// Get specific conversation
+app.get('/api/conversations/:id', (req, res) => {
+    const conversation = conversations.find(c => c.id == req.params.id);
+    if (conversation) {
+        res.json(conversation);
+    } else {
+        res.status(404).json({ error: 'Conversation not found' });
+    }
+});
+
+// Clear conversations
+app.delete('/api/conversations', (req, res) => {
+    conversations.length = 0;
+    res.json({ success: true, message: 'All conversations cleared' });
+});
+
+// Reconnect account
+app.post('/api/reconnect/:accountId', async (req, res) => {
+    const { accountId } = req.params;
+    
+    if (clients[accountId]) {
+        try {
+            await clients[accountId].destroy();
+        } catch (err) {
+            console.error('Error destroying client:', err);
+        }
+        delete clients[accountId];
+        delete qrCodes[accountId];
+    }
+    
+    clientStatus[accountId] = 'reconnecting';
+    
+    setTimeout(async () => {
+        await initializeClient(accountId);
+    }, 1000);
+    
+    res.json({ success: true, message: `Reconnecting ${accountId}...` });
+});
+
+// ============= QR VIEWER PAGE =============
 app.get('/', (req, res) => {
     res.send(`
         <!DOCTYPE html>
         <html>
         <head>
             <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
             <title>WhatsApp AI Bot</title>
             <style>
+                * { margin: 0; padding: 0; box-sizing: border-box; }
                 body {
-                    font-family: Arial, sans-serif;
+                    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
                     display: flex;
                     justify-content: center;
                     align-items: center;
                     min-height: 100vh;
                     margin: 0;
                     background: linear-gradient(135deg, #075e54, #128c7e);
+                    padding: 20px;
                 }
                 .container {
                     background: white;
                     padding: 40px;
                     border-radius: 20px;
                     text-align: center;
-                    box-shadow: 0 10px 40px rgba(0,0,0,0.2);
-                    max-width: 500px;
+                    box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+                    max-width: 550px;
+                    width: 100%;
                 }
-                h1 { color: #075e54; margin-bottom: 10px; }
-                .subtitle { color: #666; margin-bottom: 30px; }
-                #qrContainer { margin: 20px 0; }
-                img { width: 250px; height: 250px; border-radius: 10px; }
+                h1 { 
+                    color: #075e54; 
+                    margin-bottom: 10px;
+                    font-size: 28px;
+                }
+                .subtitle { 
+                    color: #666; 
+                    margin-bottom: 30px;
+                    font-size: 14px;
+                }
+                #qrContainer { 
+                    margin: 20px 0;
+                    min-height: 260px;
+                    display: flex;
+                    justify-content: center;
+                    align-items: center;
+                }
+                img { 
+                    width: 250px; 
+                    height: 250px; 
+                    border-radius: 10px;
+                    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+                }
                 .status {
                     padding: 12px;
                     border-radius: 8px;
                     margin: 20px 0;
                     font-weight: bold;
+                    font-size: 16px;
                 }
-                .waiting { background: #fff3cd; color: #856404; }
-                .connected { background: #d4edda; color: #155724; }
+                .waiting { background: #fff3cd; color: #856404; border-left: 4px solid #ffc107; }
+                .connected { background: #d4edda; color: #155724; border-left: 4px solid #28a745; }
+                .error { background: #f8d7da; color: #721c24; border-left: 4px solid #dc3545; }
                 .steps {
                     text-align: left;
                     background: #f8f9fa;
-                    padding: 15px;
+                    padding: 20px;
                     border-radius: 10px;
                     font-size: 14px;
+                    margin-top: 20px;
+                }
+                .steps ol {
+                    margin-left: 20px;
+                    margin-top: 10px;
+                }
+                .steps li {
+                    margin: 10px 0;
                 }
                 button {
                     background: #075e54;
                     color: white;
                     border: none;
-                    padding: 10px 20px;
-                    border-radius: 5px;
+                    padding: 12px 24px;
+                    border-radius: 8px;
                     cursor: pointer;
-                    margin-top: 10px;
+                    margin-top: 15px;
+                    font-size: 14px;
+                    font-weight: bold;
+                    transition: transform 0.2s;
+                }
+                button:hover {
+                    transform: scale(1.02);
+                    background: #054a42;
+                }
+                .info {
+                    font-size: 12px;
+                    color: #999;
+                    margin-top: 20px;
+                }
+                .loader {
+                    border: 3px solid #f3f3f3;
+                    border-top: 3px solid #075e54;
+                    border-radius: 50%;
+                    width: 40px;
+                    height: 40px;
+                    animation: spin 1s linear infinite;
+                    margin: 0 auto;
+                }
+                @keyframes spin {
+                    0% { transform: rotate(0deg); }
+                    100% { transform: rotate(360deg); }
                 }
             </style>
         </head>
@@ -339,45 +553,63 @@ app.get('/', (req, res) => {
                 <h1>🤖 WhatsApp AI Bot</h1>
                 <div class="subtitle">Connect your WhatsApp for Auto-Reply</div>
                 
-                <div id="qrContainer">Loading...</div>
-                <div id="status" class="status waiting">⏳ Waiting for connection...</div>
+                <div id="qrContainer">
+                    <div class="loader"></div>
+                </div>
+                <div id="status" class="status waiting">⏳ Loading...</div>
                 
                 <div class="steps">
                     <strong>📱 How to connect:</strong>
                     <ol>
                         <li>Open WhatsApp on your phone</li>
-                        <li>Settings → Linked Devices → Link a Device</li>
+                        <li>Tap <strong>Settings</strong> → <strong>Linked Devices</strong></li>
+                        <li>Tap <strong>Link a Device</strong></li>
                         <li>Scan the QR code above</li>
-                        <li>Done! Auto-reply will work automatically</li>
+                        <li>✅ Done! Auto-reply will work automatically</li>
                     </ol>
                 </div>
-                <button onclick="location.reload()">🔄 Refresh</button>
+                <button onclick="location.reload()">🔄 Refresh QR Code</button>
+                <div class="info">
+                    💡 Once connected, the bot will auto-reply to all incoming messages
+                </div>
             </div>
             
             <script>
+                let refreshInterval;
+                
                 async function checkStatus() {
                     try {
                         const res = await fetch('/api/status/account1');
                         const data = await res.json();
                         
                         if (data.isReady) {
-                            document.getElementById('qrContainer').innerHTML = '<h2>✅ Connected!</h2><p>Your bot is active and auto-replying to messages.</p>';
-                            document.getElementById('status').innerHTML = '✅ CONNECTED - Bot is active!';
+                            document.getElementById('qrContainer').innerHTML = '<div style="text-align:center"><h2>✅ Connected!</h2><p style="margin-top:10px">Your bot is active and auto-replying to messages.</p><p style="color:#28a745; margin-top:15px">🎉 WhatsApp is connected!</p></div>';
+                            document.getElementById('status').innerHTML = '✅ CONNECTED - Bot is active and replying automatically';
                             document.getElementById('status').className = 'status connected';
+                            if (refreshInterval) clearInterval(refreshInterval);
                         } else if (data.qr) {
                             document.getElementById('qrContainer').innerHTML = '<img src="' + data.qr + '" alt="QR Code">';
-                            document.getElementById('status').innerHTML = '📷 Scan QR code with WhatsApp';
+                            document.getElementById('status').innerHTML = '📷 Scan this QR code with WhatsApp to connect';
                             document.getElementById('status').className = 'status waiting';
+                        } else if (data.status === 'error') {
+                            document.getElementById('qrContainer').innerHTML = '<div style="text-align:center"><p>❌ Connection Error</p><p style="font-size:12px; margin-top:10px">' + data.status + '</p></div>';
+                            document.getElementById('status').innerHTML = '❌ Error connecting to WhatsApp. Refreshing...';
+                            document.getElementById('status').className = 'status error';
                         } else {
-                            document.getElementById('qrContainer').innerHTML = '<p>🔄 Initializing WhatsApp...</p>';
+                            document.getElementById('qrContainer').innerHTML = '<div class="loader"></div>';
+                            document.getElementById('status').innerHTML = '🔄 Initializing WhatsApp connection...';
+                            document.getElementById('status').className = 'status waiting';
                         }
                     } catch (err) {
+                        console.error('Status check error:', err);
                         document.getElementById('qrContainer').innerHTML = '<p>❌ Error connecting to server</p>';
+                        document.getElementById('status').innerHTML = '❌ Cannot connect to server. Is the backend running?';
+                        document.getElementById('status').className = 'status error';
                     }
                 }
                 
                 checkStatus();
-                setInterval(checkStatus, 3000);
+                refreshInterval = setInterval(checkStatus, 3000);
             </script>
         </body>
         </html>
@@ -386,7 +618,7 @@ app.get('/', (req, res) => {
 
 // ============= START SERVER =============
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
     console.log('');
     console.log('╔══════════════════════════════════════════════════════════════╗');
     console.log('║     WHATSAPP AI AUTO-REPLY BOT BACKEND SERVER               ║');
@@ -396,6 +628,19 @@ app.listen(PORT, () => {
     console.log('╠══════════════════════════════════════════════════════════════╣');
     console.log('║  🤖 AI Auto-Reply is ACTIVE                                   ║');
     console.log('║  📨 Any incoming message will get AI reply                    ║');
+    console.log(`║  🔧 Chrome configured: ${chromeInstalled ? '✅ YES' : '❌ NO'}                                    ║`);
+    if (chromePath) {
+        console.log(`║  📍 Chrome path: ${chromePath.substring(0, 45)}...║`);
+    }
     console.log('╚══════════════════════════════════════════════════════════════╝');
     console.log('');
+});
+
+// Graceful shutdown
+process.on('SIGTERM', () => {
+    console.log('SIGTERM received, closing server...');
+    server.close(() => {
+        console.log('Server closed');
+        process.exit(0);
+    });
 });
