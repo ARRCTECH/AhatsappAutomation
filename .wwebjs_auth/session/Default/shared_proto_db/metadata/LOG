@@ -1,0 +1,4 @@
+2026/04/21-12:04:35.696 5bc Creating DB C:\Users\HomePC\Desktop\WHATAPPAGEBNT\AhatsappAutomation\.wwebjs_auth\session\Default\shared_proto_db\metadata since it was missing.
+2026/04/21-12:04:35.744 5bc Reusing MANIFEST C:\Users\HomePC\Desktop\WHATAPPAGEBNT\AhatsappAutomation\.wwebjs_auth\session\Default\shared_proto_db\metadata/MANIFEST-000001
+2026/04/21-12:04:35.744 5bc Recovering log #3
+2026/04/21-12:04:35.745 5bc Reusing old log C:\Users\HomePC\Desktop\WHATAPPAGEBNT\AhatsappAutomation\.wwebjs_auth\session\Default\shared_proto_db\metadata/000003.log 

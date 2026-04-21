@@ -1,0 +1,4 @@
+2026/04/21-12:04:34.999 1d6c Creating DB C:\Users\HomePC\Desktop\WHATAPPAGEBNT\AhatsappAutomation\.wwebjs_auth\session\Default\Sync Data\LevelDB since it was missing.
+2026/04/21-12:04:35.132 1d6c Reusing MANIFEST C:\Users\HomePC\Desktop\WHATAPPAGEBNT\AhatsappAutomation\.wwebjs_auth\session\Default\Sync Data\LevelDB/MANIFEST-000001
+2026/04/21-12:04:35.133 1d6c Recovering log #3
+2026/04/21-12:04:35.133 1d6c Reusing old log C:\Users\HomePC\Desktop\WHATAPPAGEBNT\AhatsappAutomation\.wwebjs_auth\session\Default\Sync Data\LevelDB/000003.log 

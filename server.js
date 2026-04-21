@@ -24,6 +24,32 @@ const groq = new Groq({
     apiKey: process.env.GROQ_API_KEY
 });
 
+
+const client = new Client({
+  authStrategy: new LocalAuth(), // keeps session saved
+
+  puppeteer: {
+    headless: true,
+    args: [
+      "--no-sandbox",
+      "--disable-setuid-sandbox",
+      "--disable-dev-shm-usage",
+      "--disable-gpu"
+    ],
+  },
+});
+
+client.on("qr", (qr) => {
+  console.log("Scan QR:", qr);
+});
+
+client.on("ready", () => {
+  console.log("✅ Client is ready!");
+});
+
+client.initialize();
+
+
 async function getAIReply(userMessage, sender) {
     console.log(`🤖 Generating AI reply for: ${sender}`);
     

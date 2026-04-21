@@ -1,0 +1,4 @@
+2026/04/21-12:04:41.464 1c04 Creating DB C:\Users\HomePC\Desktop\WHATAPPAGEBNT\AhatsappAutomation\.wwebjs_auth\session\Default\IndexedDB\https_web.whatsapp.com_0.indexeddb.leveldb since it was missing.
+2026/04/21-12:04:41.502 1c04 Reusing MANIFEST C:\Users\HomePC\Desktop\WHATAPPAGEBNT\AhatsappAutomation\.wwebjs_auth\session\Default\IndexedDB\https_web.whatsapp.com_0.indexeddb.leveldb/MANIFEST-000001
+2026/04/21-12:04:41.503 1c04 Recovering log #29
+2026/04/21-12:04:41.525 1c04 Reusing old log C:\Users\HomePC\Desktop\WHATAPPAGEBNT\AhatsappAutomation\.wwebjs_auth\session\Default\IndexedDB\https_web.whatsapp.com_0.indexeddb.leveldb/000029.log 
