@@ -7,7 +7,24 @@ const Groq = require('groq-sdk');
 const fs = require('fs');
 
 require('dotenv').config();
-
+const CHROME_PATH = '/opt/render/.cache/puppeteer/chrome/linux-147.0.7727.57/chrome-linux64/chrome';
+let chromeExists = false;
+try {
+    if (fs.existsSync(CHROME_PATH)) {
+        chromeExists = true;
+        console.log(`✅ Chrome found at: ${CHROME_PATH}`);
+    } else {
+        console.log(`⚠️ Chrome not found at ${CHROME_PATH}, trying to find...`);
+        // Alternate path check
+        const altPath = '/opt/render/.cache/puppeteer/chrome/linux-147.0.7727.57/chrome-linux64/chrome';
+        if (fs.existsSync(altPath)) {
+            chromeExists = true;
+            console.log(`✅ Chrome found at alternate path: ${altPath}`);
+        }
+    }
+} catch (err) {
+    console.log('Error checking Chrome:', err.message);
+}
 // ============= PUPPETEER CHROME PATH FIX FOR RENDER =============
 // Chrome installation path शोधा
 let chromePath = null;
@@ -144,6 +161,152 @@ async function getAIReply(userMessage, sender) {
 
 // ============= WHATSAPP CLIENT INITIALIZATION =============
 
+// async function initializeClient(accountId) {
+//     if (clients[accountId]) {
+//         console.log(`Client ${accountId} already exists`);
+//         return clients[accountId];
+//     }
+
+//     console.log(`🔄 Initializing WhatsApp client for: ${accountId}`);
+//     clientStatus[accountId] = 'initializing';
+
+//     // Puppeteer launch options
+//     const puppeteerOptions = {
+//         headless: true,
+//         args: [
+//             '--no-sandbox',
+//             '--disable-setuid-sandbox',
+//             '--disable-dev-shm-usage',
+//             '--disable-accelerated-2d-canvas',
+//             '--disable-gpu',
+//             '--disable-web-security',
+//             '--disable-features=IsolateOrigins,site-per-process',
+//             '--ignore-certificate-errors',
+//             '--window-size=1920,1080'
+//         ]
+//     };
+    
+//     // Render वर Chrome path set करा (जर सापडला असेल तर)
+//     if (chromePath && chromeInstalled) {
+//         puppeteerOptions.executablePath = chromePath;
+//         console.log(`🔧 Using Chrome executable: ${chromePath}`);
+//     } else {
+//         console.log('⚠️ No custom Chrome path, letting Puppeteer find its own');
+//     }
+
+//     const client = new Client({
+//         authStrategy: new LocalAuth({ 
+//             clientId: accountId,
+//             dataPath: path.join(__dirname, 'sessions')
+//         }),
+//         puppeteer: puppeteerOptions
+//     });
+
+//     client.on('qr', async (qr) => {
+//         console.log(`📱 QR Code received for ${accountId}`);
+//         try {
+//             const qrImage = await QRCode.toDataURL(qr);
+//             qrCodes[accountId] = qrImage;
+//             clientStatus[accountId] = 'awaiting_scan';
+//             console.log(`✅ QR Code generated for ${accountId}`);
+//         } catch (err) {
+//             console.error('QR generation error:', err);
+//             clientStatus[accountId] = 'qr_error';
+//         }
+//     });
+
+//     client.on('ready', () => {
+//         console.log(`✅ WhatsApp client ${accountId} is READY!`);
+//         clientStatus[accountId] = 'ready';
+//         qrCodes[accountId] = null;
+//         console.log(`🎉 Bot is now active and will auto-reply to messages for ${accountId}`);
+//     });
+
+//     client.on('authenticated', () => {
+//         console.log(`🔐 Client ${accountId} authenticated successfully`);
+//     });
+
+//     client.on('auth_failure', (msg) => {
+//         console.error(`❌ Auth failure for ${accountId}:`, msg);
+//         clientStatus[accountId] = 'auth_failed';
+//     });
+
+//     client.on('disconnected', (reason) => {
+//         console.log(`⚠️ Client ${accountId} disconnected:`, reason);
+//         delete clients[accountId];
+//         delete qrCodes[accountId];
+//         clientStatus[accountId] = 'disconnected';
+        
+//         // Auto-reconnect after 5 seconds
+//         setTimeout(() => {
+//             console.log(`🔄 Attempting to reconnect ${accountId}...`);
+//             initializeClient(accountId);
+//         }, 5000);
+//     });
+
+//     client.on('message', async (message) => {
+//         console.log(`📨 New message from ${message.from}: ${message.body?.substring(0, 50)}`);
+        
+//         // Auto-reply logic (avoid status broadcasts and group messages)
+//         if (message.from !== 'status@broadcast' && !message.from.includes('g.us')) {
+//             const sender = message.from.replace('@c.us', '');
+//             const userMessage = message.body;
+            
+//             if (userMessage && userMessage.trim()) {
+//                 console.log(`🤖 Generating AI reply for ${sender}...`);
+                
+//                 try {
+//                     const aiReply = await getAIReply(userMessage, sender);
+//                     console.log(`🤖 AI Reply: ${aiReply}`);
+                    
+//                     // Send reply after 1-2 seconds (natural delay)
+//                     setTimeout(async () => {
+//                         try {
+//                             await message.reply(aiReply);
+//                             console.log(`✅ Auto-reply sent to ${sender}`);
+                            
+//                             // Store conversation
+//                             conversations.unshift({
+//                                 id: Date.now(),
+//                                 sender: sender,
+//                                 userMessage: userMessage,
+//                                 aiReply: aiReply,
+//                                 timestamp: new Date().toISOString()
+//                             });
+                            
+//                             // Keep only last 100 conversations
+//                             if (conversations.length > 100) {
+//                                 conversations.pop();
+//                             }
+//                         } catch (err) {
+//                             console.error(`❌ Failed to send reply: ${err.message}`);
+//                         }
+//                     }, 1500);
+//                 } catch (error) {
+//                     console.error('AI reply generation failed:', error);
+//                 }
+//             }
+//         }
+//     });
+
+//     try {
+//         await client.initialize();
+//         clients[accountId] = client;
+//         console.log(`✅ Client ${accountId} initialized successfully`);
+//         return client;
+//     } catch (error) {
+//         console.error(`❌ Failed to initialize client ${accountId}:`, error.message);
+//         clientStatus[accountId] = `error: ${error.message}`;
+        
+//         // Retry initialization after 10 seconds on error
+//         setTimeout(() => {
+//             console.log(`🔄 Retrying initialization for ${accountId}...`);
+//             initializeClient(accountId);
+//         }, 10000);
+        
+//         return null;
+//     }
+// }
 async function initializeClient(accountId) {
     if (clients[accountId]) {
         console.log(`Client ${accountId} already exists`);
@@ -153,9 +316,10 @@ async function initializeClient(accountId) {
     console.log(`🔄 Initializing WhatsApp client for: ${accountId}`);
     clientStatus[accountId] = 'initializing';
 
-    // Puppeteer launch options
+    // Puppeteer launch options - Render साठी विशेष
     const puppeteerOptions = {
         headless: true,
+        executablePath: CHROME_PATH,  // Direct path to Chrome
         args: [
             '--no-sandbox',
             '--disable-setuid-sandbox',
@@ -169,13 +333,7 @@ async function initializeClient(accountId) {
         ]
     };
     
-    // Render वर Chrome path set करा (जर सापडला असेल तर)
-    if (chromePath && chromeInstalled) {
-        puppeteerOptions.executablePath = chromePath;
-        console.log(`🔧 Using Chrome executable: ${chromePath}`);
-    } else {
-        console.log('⚠️ No custom Chrome path, letting Puppeteer find its own');
-    }
+    console.log(`🔧 Using Chrome executable: ${CHROME_PATH}`);
 
     const client = new Client({
         authStrategy: new LocalAuth({ 
@@ -185,6 +343,7 @@ async function initializeClient(accountId) {
         puppeteer: puppeteerOptions
     });
 
+    // बाकीचा सगळा code तसाच ठेवा...
     client.on('qr', async (qr) => {
         console.log(`📱 QR Code received for ${accountId}`);
         try {
@@ -194,7 +353,6 @@ async function initializeClient(accountId) {
             console.log(`✅ QR Code generated for ${accountId}`);
         } catch (err) {
             console.error('QR generation error:', err);
-            clientStatus[accountId] = 'qr_error';
         }
     });
 
@@ -202,11 +360,10 @@ async function initializeClient(accountId) {
         console.log(`✅ WhatsApp client ${accountId} is READY!`);
         clientStatus[accountId] = 'ready';
         qrCodes[accountId] = null;
-        console.log(`🎉 Bot is now active and will auto-reply to messages for ${accountId}`);
     });
 
     client.on('authenticated', () => {
-        console.log(`🔐 Client ${accountId} authenticated successfully`);
+        console.log(`🔐 Client ${accountId} authenticated`);
     });
 
     client.on('auth_failure', (msg) => {
@@ -219,18 +376,11 @@ async function initializeClient(accountId) {
         delete clients[accountId];
         delete qrCodes[accountId];
         clientStatus[accountId] = 'disconnected';
-        
-        // Auto-reconnect after 5 seconds
-        setTimeout(() => {
-            console.log(`🔄 Attempting to reconnect ${accountId}...`);
-            initializeClient(accountId);
-        }, 5000);
     });
 
     client.on('message', async (message) => {
         console.log(`📨 New message from ${message.from}: ${message.body?.substring(0, 50)}`);
         
-        // Auto-reply logic (avoid status broadcasts and group messages)
         if (message.from !== 'status@broadcast' && !message.from.includes('g.us')) {
             const sender = message.from.replace('@c.us', '');
             const userMessage = message.body;
@@ -242,13 +392,11 @@ async function initializeClient(accountId) {
                     const aiReply = await getAIReply(userMessage, sender);
                     console.log(`🤖 AI Reply: ${aiReply}`);
                     
-                    // Send reply after 1-2 seconds (natural delay)
                     setTimeout(async () => {
                         try {
                             await message.reply(aiReply);
                             console.log(`✅ Auto-reply sent to ${sender}`);
                             
-                            // Store conversation
                             conversations.unshift({
                                 id: Date.now(),
                                 sender: sender,
@@ -257,7 +405,6 @@ async function initializeClient(accountId) {
                                 timestamp: new Date().toISOString()
                             });
                             
-                            // Keep only last 100 conversations
                             if (conversations.length > 100) {
                                 conversations.pop();
                             }
@@ -278,19 +425,11 @@ async function initializeClient(accountId) {
         console.log(`✅ Client ${accountId} initialized successfully`);
         return client;
     } catch (error) {
-        console.error(`❌ Failed to initialize client ${accountId}:`, error.message);
-        clientStatus[accountId] = `error: ${error.message}`;
-        
-        // Retry initialization after 10 seconds on error
-        setTimeout(() => {
-            console.log(`🔄 Retrying initialization for ${accountId}...`);
-            initializeClient(accountId);
-        }, 10000);
-        
+        console.error(`❌ Failed to initialize client ${accountId}:`, error);
+        clientStatus[accountId] = 'error';
         return null;
     }
 }
-
 // Initialize default account on startup with retry logic
 async function startBot() {
     console.log('🤖 Starting WhatsApp Bot...');
